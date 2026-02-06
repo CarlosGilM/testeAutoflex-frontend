@@ -1,20 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, Box, X, Pencil, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
-interface Material {
-    id: number;
-    name: string;
-    stock: number;
-}
+import RawMaterialsService, { RawMaterialDTO } from '../services/RawMaterialsService';
 
 export default function RawMaterials() {
-    const [materials, setMaterials] = useState<Material[]>([
-        { id: 1, name: 'Chapa de Aço 5mm', stock: 120 },
-        { id: 2, name: 'Parafusos M6', stock: 5000 },
-        { id: 3, name: 'Tinta Epóxi Azul', stock: 45 },
-        { id: 4, name: 'Cimento CP-II', stock: 10 },
-    ]);
+    // Estado agora tipado com o DTO do backend
+    const [materials, setMaterials] = useState<RawMaterialDTO[]>([]);
+
+    // Estados de Loading (Opcional, mas recomendado para UX)
+    const [isLoading, setIsLoading] = useState(true);
 
     // Estados dos Modais
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -22,61 +16,114 @@ export default function RawMaterials() {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
     // Estados de Dados Temporários
-    const [currentMaterial, setCurrentMaterial] = useState<Material | null>(null); // Para Edição
-    const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null); // Para Exclusão
+    const [currentMaterial, setCurrentMaterial] = useState<RawMaterialDTO | null>(null);
+    const [materialToDelete, setMaterialToDelete] = useState<RawMaterialDTO | null>(null);
 
     // Formulário
     const [formName, setFormName] = useState('');
     const [formStock, setFormStock] = useState('');
 
-    // --- FUNÇÕES ---
 
-    // 1. ADICIONAR
-    const handleAddSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formName || !formStock) return;
-        const newMaterial = { id: Date.now(), name: formName, stock: Number(formStock) };
-        setMaterials([...materials, newMaterial]);
-        setIsAddModalOpen(false);
-        setFormName(''); setFormStock('');
+    // Carregar dados do Backend
+    const fetchMaterials = async () => {
+        try {
+            const data = await RawMaterialsService.getAll();
+            setMaterials(data);
+        } catch (error) {
+            console.error("Erro ao buscar materiais:", error);
+            alert("Erro ao conectar com o servidor.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    // 2. EDITAR
-    const openEditModal = (material: Material) => {
+    // Executa ao abrir a página
+    useEffect(() => {
+        fetchMaterials();
+    }, []);
+
+    // 1. ADICIONAR
+    const handleAddSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formName || !formStock) return;
+
+        try {
+            await RawMaterialsService.create({
+                name: formName,
+                stockQuantity: Number(formStock)
+            });
+
+            // Recarrega a lista e fecha o modal
+            await fetchMaterials();
+            setIsAddModalOpen(false);
+            setFormName('');
+            setFormStock('');
+        } catch (error) {
+            console.error("Erro ao criar:", error);
+            alert("Erro ao salvar material.");
+        }
+    };
+
+    // 2. PREPARAR EDIÇÃO
+    const openEditModal = (material: RawMaterialDTO) => {
         setCurrentMaterial(material);
         setFormName(material.name);
-        setFormStock(material.stock.toString());
+        setFormStock(material.stockQuantity.toString()); // Backend usa stockQuantity
         setIsEditModalOpen(true);
     };
 
-    const handleEditSubmit = (e: React.FormEvent) => {
+    // SALVAR EDIÇÃO
+    const handleEditSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!currentMaterial) return;
-        setMaterials(materials.map((item) =>
-            item.id === currentMaterial.id ? { ...item, name: formName, stock: Number(formStock) } : item
-        ));
-        setIsEditModalOpen(false);
-        setCurrentMaterial(null);
+        if (!currentMaterial || !currentMaterial.code) return;
+
+        try {
+            await RawMaterialsService.update(currentMaterial.code, {
+                name: formName,
+                stockQuantity: Number(formStock)
+            });
+
+            await fetchMaterials();
+            setIsEditModalOpen(false);
+            setCurrentMaterial(null);
+        } catch (error) {
+            console.error("Erro ao editar:", error);
+            alert("Erro ao atualizar material.");
+        }
     };
 
-    // 3. EXCLUIR (Com Modal Customizado)
-    const openDeleteModal = (material: Material) => {
+    // 3. EXCLUIR
+    const openDeleteModal = (material: RawMaterialDTO) => {
         setMaterialToDelete(material);
         setIsDeleteModalOpen(true);
     };
 
-    const confirmDelete = () => {
-        if (materialToDelete) {
-            setMaterials(materials.filter((item) => item.id !== materialToDelete.id));
-            setIsDeleteModalOpen(false);
-            setMaterialToDelete(null);
+    const confirmDelete = async () => {
+        if (materialToDelete && materialToDelete.code) {
+            try {
+                await RawMaterialsService.delete(materialToDelete.code);
+                await fetchMaterials();
+                setIsDeleteModalOpen(false);
+                setMaterialToDelete(null);
+            } catch (error: any) { // Tipamos como 'any' para acessar as propriedades do axios
+                console.error("Erro ao excluir:", error);
+
+                // Verifica se o erro veio do backend e qual o código
+                if (error.response && error.response.status === 409) {
+                    alert("Não é possível excluir: Este material está sendo usado em uma receita de produto.");
+                } else {
+                    alert("Ocorreu um erro ao tentar excluir o material. Tente novamente.");
+                }
+
+                // Opcional: Fechar o modal mesmo com erro, ou manter aberto para o usuário tentar outra coisa
+                setIsDeleteModalOpen(false);
+            }
         }
     };
 
     return (
         <div className="page-container">
 
-            {/* Cabeçalho Alinhado */}
             <header className="page-header">
                 <div className="header-content">
                     <Link to="/" className="back-link">← Voltar</Link>
@@ -91,7 +138,9 @@ export default function RawMaterials() {
 
             {/* TABELA DE MATERIAIS */}
             <div className="table-container">
-                {materials.length === 0 ? (
+                {isLoading ? (
+                    <div className="empty-state"><p>Carregando dados...</p></div>
+                ) : materials.length === 0 ? (
                     <div className="empty-state">
                         <Box size={48} color="#cbd5e1" />
                         <p>Nenhum material cadastrado.</p>
@@ -107,11 +156,12 @@ export default function RawMaterials() {
                         </thead>
                         <tbody>
                             {materials.map((material) => (
-                                <tr key={material.id}>
+                                <tr key={material.code}> { }
                                     <td className="td-name">{material.name}</td>
                                     <td>
                                         <span className="stock-badge">
-                                            {material.stock} Unidades
+                                            { }
+                                            {material.stockQuantity} Unidades
                                         </span>
                                     </td>
                                     <td className="td-actions">
@@ -189,7 +239,7 @@ export default function RawMaterials() {
                 </div>
             )}
 
-            {/* --- MODAL DE EXCLUSÃO (NOVO) --- */}
+            {/* --- MODAL DE EXCLUSÃO --- */}
             {isDeleteModalOpen && (
                 <div className="modal-overlay">
                     <div className="modal-content modal-danger">

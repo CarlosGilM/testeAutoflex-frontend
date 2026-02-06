@@ -1,89 +1,103 @@
-import { useState } from 'react';
-import { Plus, Trash2, Pencil, Box, X, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Trash2, Pencil, Box, X, AlertTriangle, Loader2, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ProductService, { ProductResponseDTO } from '../services/ProductService';
+import RawMaterialsService, { RawMaterialDTO } from '../services/RawMaterialsService';
 
-// Interfaces
-interface RecipeItem {
+interface FormRecipeItem {
     materialId: number;
     materialName: string;
     quantity: number;
 }
 
-interface Product {
-    id: number;
-    code: string;
-    name: string;
-    value: number;
-    recipe: RecipeItem[];
-}
-
-// Simulando matérias-primas
-const availableMaterials = [
-    { id: 1, name: 'Chapa de Aço 5mm' },
-    { id: 2, name: 'Parafusos M6' },
-    { id: 3, name: 'Tinta Epóxi Azul' },
-    { id: 4, name: 'Cimento CP-II' },
-    { id: 5, name: 'Madeira MDF' },
-];
-
 export default function Products() {
-    const [products, setProducts] = useState<Product[]>([
-        {
-            id: 1,
-            code: 'PROD8492',
-            name: 'Xisculos',
-            value: 20.00,
-            recipe: [{ materialId: 1, materialName: 'Chapa de Aço 5mm', quantity: 1 }]
-        }
-    ]);
+    const [products, setProducts] = useState<ProductResponseDTO[]>([]);
+    const [availableMaterials, setAvailableMaterials] = useState<RawMaterialDTO[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
+    // Modais
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false); // Modal de Detalhes
     const [isEditing, setIsEditing] = useState(false);
 
-    const [currentId, setCurrentId] = useState<number | null>(null);
-    const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+    // Seleção
+    const [currentCode, setCurrentCode] = useState<number | null>(null);
+    const [productToDelete, setProductToDelete] = useState<ProductResponseDTO | null>(null);
+    const [productToView, setProductToView] = useState<ProductResponseDTO | null>(null);
 
-    // Formulário (Código removido do formulário visual, mas mantido no estado interno se for edição)
-    const [editingCode, setEditingCode] = useState('');
+    // Formulário
     const [formName, setFormName] = useState('');
     const [formValue, setFormValue] = useState('');
-    const [formRecipe, setFormRecipe] = useState<RecipeItem[]>([]);
+    const [formRecipe, setFormRecipe] = useState<FormRecipeItem[]>([]);
 
     // Controles da Receita
     const [selectedMatId, setSelectedMatId] = useState('');
     const [selectedQty, setSelectedQty] = useState('1');
 
-    // --- FUNÇÕES ---
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const [productsData, materialsData] = await Promise.all([
+                ProductService.getAll(),
+                RawMaterialsService.getAll()
+            ]);
+            setProducts(productsData);
+            setAvailableMaterials(materialsData);
+        } catch (error) {
+            console.error("Erro ao carregar dados:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-    const openModal = (product?: Product) => {
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const openModal = (product?: ProductResponseDTO) => {
+        setSelectedMatId('');
+        setSelectedQty('1');
+
         if (product) {
             setIsEditing(true);
-            setCurrentId(product.id);
-            setEditingCode(product.code); // Guarda o código existente
+            setCurrentCode(product.code);
             setFormName(product.name);
-            setFormValue(product.value.toString());
-            setFormRecipe([...product.recipe]);
+            setFormValue(product.price.toString());
+            const visualRecipe: FormRecipeItem[] = product.compositions.map(comp => ({
+                materialId: comp.rawMaterialCode,
+                materialName: comp.rawMaterialName || 'Material',
+                quantity: comp.quantityNeeded
+            }));
+            setFormRecipe(visualRecipe);
         } else {
             setIsEditing(false);
-            setCurrentId(null);
-            setEditingCode('');
+            setCurrentCode(null);
             setFormName('');
             setFormValue('');
             setFormRecipe([]);
         }
-        setSelectedMatId('');
-        setSelectedQty('1');
         setIsModalOpen(true);
+    };
+
+    const openViewModal = (product: ProductResponseDTO) => {
+        setProductToView(product);
+        setIsViewModalOpen(true);
     };
 
     const addMaterialToRecipe = () => {
         if (!selectedMatId || !selectedQty) return;
-        const material = availableMaterials.find(m => m.id === Number(selectedMatId));
+        const matIdNum = Number(selectedMatId);
+        const material = availableMaterials.find(m => m.code === matIdNum);
         if (!material) return;
 
-        const newItem: RecipeItem = {
-            materialId: material.id,
+        if (formRecipe.some(item => item.materialId === matIdNum)) {
+            alert("Este material já está na receita.");
+            return;
+        }
+
+        const newItem: FormRecipeItem = {
+            materialId: material.code!,
             materialName: material.name,
             quantity: Number(selectedQty)
         };
@@ -99,40 +113,56 @@ export default function Products() {
         setFormRecipe(newRecipe);
     };
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formName || !formValue) return;
 
-        // Se for novo, gera um código aleatório. Se for edição, usa o antigo.
-        const finalCode = isEditing ? editingCode : `PROD${Math.floor(Math.random() * 10000)}`;
-
-        const productData = {
-            code: finalCode,
-            name: formName,
-            value: Number(formValue),
-            recipe: formRecipe
-        };
-
-        if (isEditing && currentId) {
-            setProducts(products.map(p => p.id === currentId ? { ...productData, id: currentId } : p));
-        } else {
-            setProducts([...products, { ...productData, id: Date.now() }]);
+        // REGRA DE NEGÓCIO: Mínimo 1 material para novos produtos
+        if (!isEditing && formRecipe.length === 0) {
+            alert("Erro: Um produto novo deve ter pelo menos 1 matéria-prima na receita.");
+            return;
         }
 
-        setIsModalOpen(false);
+        if (!formName || !formValue) return;
+
+        const payload = {
+            name: formName,
+            price: Number(formValue),
+            compositions: formRecipe.map(item => ({
+                rawMaterialCode: item.materialId,
+                quantityNeeded: item.quantity,
+                productCode: currentCode || 0
+            }))
+        };
+
+        try {
+            if (isEditing && currentCode) {
+                await ProductService.update(currentCode, payload);
+            } else {
+                await ProductService.create(payload);
+            }
+            await fetchData();
+            setIsModalOpen(false);
+        } catch (error) {
+            console.error("Erro ao salvar:", error);
+            alert("Erro ao salvar produto.");
+        }
     };
 
-    const handleDelete = () => {
-        if (productToDelete) {
-            setProducts(products.filter(p => p.id !== productToDelete.id));
-            setIsDeleteModalOpen(false);
-            setProductToDelete(null);
+    const handleDelete = async () => {
+        if (productToDelete && productToDelete.code) {
+            try {
+                await ProductService.delete(productToDelete.code);
+                await fetchData();
+                setIsDeleteModalOpen(false);
+                setProductToDelete(null);
+            } catch (error) {
+                alert("Erro ao excluir produto.");
+            }
         }
     };
 
     return (
         <div className="page-container">
-
             <header className="page-header">
                 <div className="header-content">
                     <Link to="/" className="back-link">← Voltar</Link>
@@ -145,9 +175,13 @@ export default function Products() {
                 </button>
             </header>
 
-            {/* TABELA */}
             <div className="table-container">
-                {products.length === 0 ? (
+                {isLoading ? (
+                    <div className="empty-state">
+                        <Loader2 size={48} className="animate-spin" color="#2563eb" />
+                        <p>Carregando catálogo...</p>
+                    </div>
+                ) : products.length === 0 ? (
                     <div className="empty-state">
                         <Box size={48} color="#cbd5e1" />
                         <p>Nenhum produto cadastrado.</p>
@@ -165,16 +199,18 @@ export default function Products() {
                         </thead>
                         <tbody>
                             {products.map((prod) => (
-                                <tr key={prod.id}>
+                                <tr key={prod.code}>
                                     <td style={{ fontFamily: 'monospace', color: '#64748b' }}>{prod.code}</td>
                                     <td className="td-name">{prod.name}</td>
+                                    <td>{prod.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                     <td>
-                                        {prod.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                    </td>
-                                    <td>
-                                        <span className="recipe-badge">
-                                            {prod.recipe.length} {prod.recipe.length === 1 ? 'material' : 'materiais'}
-                                        </span>
+                                        <button
+                                            className="btn-view-recipe"
+                                            onClick={() => openViewModal(prod)}
+                                        >
+                                            <Eye size={16} />
+                                            {prod.compositions ? prod.compositions.length : 0} itens
+                                        </button>
                                     </td>
                                     <td className="td-actions">
                                         <button className="btn-icon btn-edit" onClick={() => openModal(prod)} title="Editar">
@@ -191,7 +227,7 @@ export default function Products() {
                 )}
             </div>
 
-            {/* --- MODAL DE PRODUTO --- */}
+            {/* --- MODAL DE PRODUTO (CREATE/EDIT) --- */}
             {isModalOpen && (
                 <div className="modal-overlay">
                     <div className="modal-content modal-large">
@@ -201,88 +237,90 @@ export default function Products() {
                         </div>
 
                         <form onSubmit={handleSave}>
-                            {/* CAMPO CÓDIGO REMOVIDO DAQUI */}
-
                             <div className="form-group">
                                 <label>Nome do Produto</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nome do produto"
-                                    value={formName}
-                                    onChange={e => setFormName(e.target.value)}
-                                    autoFocus // Foco automático no nome agora
-                                />
+                                <input type="text" value={formName} onChange={e => setFormName(e.target.value)} autoFocus />
                             </div>
                             <div className="form-group">
                                 <label>Valor de Venda (R$)</label>
-                                <input
-                                    type="number"
-                                    placeholder="0.00"
-                                    value={formValue}
-                                    onChange={e => setFormValue(e.target.value)}
-                                />
+                                <input type="number" value={formValue} onChange={e => setFormValue(e.target.value)} />
                             </div>
 
                             <hr className="divider" />
 
-                            {/* --- ÁREA DA RECEITA --- */}
-                            <div className="form-group">
-                                <label>Receita (Matérias-Primas)</label>
+                            {/* RECEITA: Só aparece no cadastro */}
+                            {!isEditing && (
+                                <div className="form-group">
+                                    <label>Receita (Matérias-Primas)</label>
+                                    <div className="recipe-builder">
+                                        <select value={selectedMatId} onChange={(e) => setSelectedMatId(e.target.value)} className="recipe-select">
+                                            <option value="">Selecione um material...</option>
+                                            {availableMaterials.map(m => (
+                                                <option key={m.code} value={m.code}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                        <input type="number" min="1" value={selectedQty} onChange={(e) => setSelectedQty(e.target.value)} className="recipe-qty" />
+                                        <button type="button" onClick={addMaterialToRecipe} className="btn-add-recipe"><Plus size={20} /></button>
+                                    </div>
 
-                                <div className="recipe-builder">
-                                    {/* Select ocupa todo o espaço restante */}
-                                    <select
-                                        value={selectedMatId}
-                                        onChange={(e) => setSelectedMatId(e.target.value)}
-                                        className="recipe-select"
-                                    >
-                                        <option value="">Selecione um material...</option>
-                                        {availableMaterials.map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
-
-                                    {/* Input pequeno apenas para o número */}
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Qtd"
-                                        value={selectedQty}
-                                        onChange={(e) => setSelectedQty(e.target.value)}
-                                        className="recipe-qty"
-                                    />
-
-                                    <button type="button" onClick={addMaterialToRecipe} className="btn-add-recipe">
-                                        <Plus size={20} />
-                                    </button>
-                                </div>
-
-                                <div className="recipe-list">
-                                    {formRecipe.length === 0 ? (
-                                        <div className="recipe-empty">Nenhum material adicionado ainda.</div>
-                                    ) : (
-                                        formRecipe.map((item, idx) => (
-                                            <div key={idx} className="recipe-item">
-                                                <span>{item.materialName}</span>
-                                                <div className="recipe-item-actions">
-                                                    <span className="qty-tag">{item.quantity} un</span>
-                                                    <button type="button" onClick={() => removeMaterialFromRecipe(idx)} className="btn-remove-recipe">
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                    <div className="recipe-list">
+                                        {formRecipe.length === 0 ? (
+                                            <div className="recipe-empty">Nenhum material adicionado.</div>
+                                        ) : (
+                                            formRecipe.map((item, idx) => (
+                                                <div key={idx} className="recipe-item">
+                                                    <span>{item.materialName}</span>
+                                                    <div className="recipe-item-actions">
+                                                        <span className="qty-tag">{item.quantity} un</span>
+                                                        <button type="button" onClick={() => removeMaterialFromRecipe(idx)} className="btn-remove-recipe"><Trash2 size={14} /></button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))
-                                    )}
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {isEditing && (
+                                <div className="info-box">
+                                    <AlertTriangle size={20} />
+                                    <p>A receita não pode ser alterada. Para mudar a composição, exclua e crie um novo produto.</p>
+                                </div>
+                            )}
 
                             <div className="modal-actions">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancelar</button>
-                                <button type="submit" className="btn-primary">
-                                    {isEditing ? 'Salvar Alterações' : 'Criar Produto'}
-                                </button>
+                                <button type="submit" className="btn-primary">{isEditing ? 'Salvar Alterações' : 'Criar Produto'}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* --- MODAL DE DETALHES DA RECEITA (VIEW) --- */}
+            {isViewModalOpen && productToView && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <div>
+                                <h2>Composição do Produto</h2>
+                                <p style={{ fontSize: '0.9rem', color: '#64748b' }}>{productToView.name}</p>
+                            </div>
+                            <button onClick={() => setIsViewModalOpen(false)} className="btn-close"><X size={20} /></button>
+                        </div>
+
+                        <div className="view-recipe-container">
+                            {productToView.compositions.map((comp, idx) => (
+                                <div key={idx} className="view-recipe-item">
+                                    <span className="mat-name">{comp.rawMaterialName}</span>
+                                    <span className="mat-qty">{comp.quantityNeeded} unidades</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="modal-actions">
+                            <button onClick={() => setIsViewModalOpen(false)} className="btn-primary">Fechar</button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -291,11 +329,9 @@ export default function Products() {
             {isDeleteModalOpen && (
                 <div className="modal-overlay">
                     <div className="modal-content modal-danger">
-                        <div className="modal-icon-danger">
-                            <AlertTriangle size={32} />
-                        </div>
+                        <div className="modal-icon-danger"><AlertTriangle size={32} /></div>
                         <h2>Excluir Produto?</h2>
-                        <p>Tem certeza que deseja excluir <strong>{productToDelete?.name}</strong>? Essa ação é irreversível.</p>
+                        <p>Tem certeza que deseja excluir <strong>{productToDelete?.name}</strong>?</p>
                         <div className="modal-actions">
                             <button onClick={() => setIsDeleteModalOpen(false)} className="btn-secondary">Cancelar</button>
                             <button onClick={handleDelete} className="btn-danger">Sim, Excluir</button>
@@ -303,7 +339,6 @@ export default function Products() {
                     </div>
                 </div>
             )}
-
         </div>
     );
 }
