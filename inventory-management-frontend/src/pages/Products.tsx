@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Pencil, Box, X, AlertTriangle, Loader2, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import ProductService, { ProductResponseDTO } from '../services/ProductService';
-import RawMaterialsService, { RawMaterialDTO } from '../services/RawMaterialsService';
+import ProductService, { type ProductResponseDTO } from '../services/ProductService';
+import RawMaterialsService, { type RawMaterialDTO } from '../services/RawMaterialsService';
 
 interface FormRecipeItem {
     materialId: number;
@@ -15,23 +15,19 @@ export default function Products() {
     const [availableMaterials, setAvailableMaterials] = useState<RawMaterialDTO[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Modais
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [isViewModalOpen, setIsViewModalOpen] = useState(false); // Modal de Detalhes
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
 
-    // Seleção
     const [currentCode, setCurrentCode] = useState<number | null>(null);
     const [productToDelete, setProductToDelete] = useState<ProductResponseDTO | null>(null);
     const [productToView, setProductToView] = useState<ProductResponseDTO | null>(null);
 
-    // Formulário
     const [formName, setFormName] = useState('');
     const [formValue, setFormValue] = useState('');
     const [formRecipe, setFormRecipe] = useState<FormRecipeItem[]>([]);
 
-    // Controles da Receita
     const [selectedMatId, setSelectedMatId] = useState('');
     const [selectedQty, setSelectedQty] = useState('1');
 
@@ -116,7 +112,6 @@ export default function Products() {
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // REGRA DE NEGÓCIO: Mínimo 1 material para novos produtos
         if (!isEditing && formRecipe.length === 0) {
             alert("Erro: Um produto novo deve ter pelo menos 1 matéria-prima na receita.");
             return;

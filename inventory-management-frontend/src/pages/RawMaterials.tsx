@@ -1,25 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Box, X, Pencil, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import RawMaterialsService, { RawMaterialDTO } from '../services/RawMaterialsService';
+import RawMaterialsService, { type RawMaterialDTO } from '../services/RawMaterialsService';
 
 export default function RawMaterials() {
-    // Estado agora tipado com o DTO do backend
     const [materials, setMaterials] = useState<RawMaterialDTO[]>([]);
 
-    // Estados de Loading (Opcional, mas recomendado para UX)
     const [isLoading, setIsLoading] = useState(true);
 
-    // Estados dos Modais
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
-    // Estados de Dados Temporários
     const [currentMaterial, setCurrentMaterial] = useState<RawMaterialDTO | null>(null);
     const [materialToDelete, setMaterialToDelete] = useState<RawMaterialDTO | null>(null);
 
-    // Formulário
     const [formName, setFormName] = useState('');
     const [formStock, setFormStock] = useState('');
 
@@ -42,7 +37,7 @@ export default function RawMaterials() {
         fetchMaterials();
     }, []);
 
-    // 1. ADICIONAR
+    // ADICIONAR
     const handleAddSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formName || !formStock) return;
@@ -53,7 +48,6 @@ export default function RawMaterials() {
                 stockQuantity: Number(formStock)
             });
 
-            // Recarrega a lista e fecha o modal
             await fetchMaterials();
             setIsAddModalOpen(false);
             setFormName('');
@@ -64,11 +58,11 @@ export default function RawMaterials() {
         }
     };
 
-    // 2. PREPARAR EDIÇÃO
+    // PREPARAR EDIÇÃO
     const openEditModal = (material: RawMaterialDTO) => {
         setCurrentMaterial(material);
         setFormName(material.name);
-        setFormStock(material.stockQuantity.toString()); // Backend usa stockQuantity
+        setFormStock(material.stockQuantity.toString());
         setIsEditModalOpen(true);
     };
 
@@ -92,7 +86,7 @@ export default function RawMaterials() {
         }
     };
 
-    // 3. EXCLUIR
+    // EXCLUIR
     const openDeleteModal = (material: RawMaterialDTO) => {
         setMaterialToDelete(material);
         setIsDeleteModalOpen(true);
@@ -105,17 +99,15 @@ export default function RawMaterials() {
                 await fetchMaterials();
                 setIsDeleteModalOpen(false);
                 setMaterialToDelete(null);
-            } catch (error: any) { // Tipamos como 'any' para acessar as propriedades do axios
+            } catch (error: any) {
                 console.error("Erro ao excluir:", error);
 
-                // Verifica se o erro veio do backend e qual o código
                 if (error.response && error.response.status === 409) {
                     alert("Não é possível excluir: Este material está sendo usado em uma receita de produto.");
                 } else {
                     alert("Ocorreu um erro ao tentar excluir o material. Tente novamente.");
                 }
 
-                // Opcional: Fechar o modal mesmo com erro, ou manter aberto para o usuário tentar outra coisa
                 setIsDeleteModalOpen(false);
             }
         }
@@ -156,7 +148,7 @@ export default function RawMaterials() {
                         </thead>
                         <tbody>
                             {materials.map((material) => (
-                                <tr key={material.code}> { }
+                                <tr key={material.code}>
                                     <td className="td-name">{material.name}</td>
                                     <td>
                                         <span className="stock-badge">

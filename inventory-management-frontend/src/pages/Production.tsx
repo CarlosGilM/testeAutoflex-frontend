@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import ProductionService, { ProductionSuggestionDTO } from '../services/ProductionService';
+import ProductionService, { type ProductionSuggestionDTO } from '../services/ProductionService';
 
 export default function Production() {
     const [suggestions, setSuggestions] = useState<ProductionSuggestionDTO[]>([]);
